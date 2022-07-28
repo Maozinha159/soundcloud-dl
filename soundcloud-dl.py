@@ -42,6 +42,7 @@ class SCIncorrectUrlException(Exception):
 class SoundCloudDL:
     _session: aiohttp.ClientSession = None
     _timeout: bool = False
+    _aenters: int = 0 # so that multiple 'async with' constructs wont replace session
 
     _client_id  : str = None
 
@@ -59,17 +60,21 @@ class SoundCloudDL:
                 raise FfmpegNotInPathError('ffmpeg and/or ffprobe is not in PATH')
     
     async def __aenter__(self):
-        self._session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(force_close=True),
-            timeout=aiohttp.ClientTimeout(total=None),
-            headers={"Authorization": f"OAuth {self.oauth_token}"} if self.oauth_token else {}
-        )
+        if not self._aenters:
+            self._session = aiohttp.ClientSession(
+                connector=aiohttp.TCPConnector(force_close=True),
+                timeout=aiohttp.ClientTimeout(total=None),
+                headers={"Authorization": f"OAuth {self.oauth_token}"} if self.oauth_token else {}
+            )
+        self._aenters += 1
         if not self._client_id:
             await self._scrape_client_id()
         return self
     
     async def __aexit__(self, *_) -> None:
-        await self._session.close()
+        self._aenters -= 1
+        if not self._aenters:
+            await self._session.close()
         self._session = None
 
     async def _extract_client_id(self, url: str) -> str:
@@ -316,7 +321,7 @@ class SoundCloudDL:
                 #print(f"converting {data['title']} to flac")
                 file = f'{tempfile}.flac'
                 proc = await asyncio.subprocess.create_subprocess_exec(
-                    'ffmpeg', '-i', tempfile, "-vn", "-compression_level", str(self.compression_level), file,
+                    'ffmpeg', '-nostdin', '-i', tempfile, "-vn", "-compression_level", str(self.compression_level), file,
                     stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL
                 )
                 await proc.wait()
@@ -326,7 +331,7 @@ class SoundCloudDL:
                 file = f"{tempfile}.{_EXT_MAP[codec]}"
                 # deadass saw a track where the original file was a 154 MB mp4 with a visualizer so yeah, -vn
                 proc = await asyncio.subprocess.create_subprocess_exec(
-                    'ffmpeg', '-i', tempfile, '-c', 'copy', "-vn", file,
+                    'ffmpeg', '-nostdin', '-i', tempfile, '-c', 'copy', "-vn", file,
                     stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL
                 )
                 await proc.wait()
@@ -338,7 +343,7 @@ class SoundCloudDL:
             file = f"{tempfile}.{_EXT_MAP[codec]}"
             # the below is just in case X could happen (idk what but whateva)
             proc = await asyncio.subprocess.create_subprocess_exec(
-                'ffmpeg', '-i', tempfile, '-c', 'copy', file,
+                'ffmpeg', '-nostdin', '-i', tempfile, '-c', 'copy', file,
                 stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL
             )
             await proc.wait()
@@ -363,7 +368,7 @@ class SoundCloudDL:
             # concat all segments
             file = utils.get_tempfile('scdl-', f".{_EXT_MAP[codec]}")
             proc = await asyncio.subprocess.create_subprocess_exec(
-                'ffmpeg', '-i', f"concat:{'|'.join(tfiles)}", '-c', 'copy', file,
+                'ffmpeg', '-nostdin', '-i', f"concat:{'|'.join(tfiles)}", '-c', 'copy', file,
                 stderr=asyncio.subprocess.DEVNULL, stdin=asyncio.subprocess.DEVNULL
             )
             await proc.wait()

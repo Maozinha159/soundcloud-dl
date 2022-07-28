@@ -33,7 +33,10 @@ def unique_path(path: str, ext: bool = True) -> str:
     if ext:
         bn, _, e = os.path.basename(path).rpartition('.')
         d = os.path.dirname(path)
-        template = f"{d}/{bn} ({{}}).{e}"
+        if not d:
+            template = f"{bn} ({{}}).{e}"
+        else:
+            template = f"{d}/{bn} ({{}}).{e}"
     else:
         template = f"{path} ({{}})"
 
