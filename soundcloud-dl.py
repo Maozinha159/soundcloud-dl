@@ -19,7 +19,7 @@ from mutagen.flac import FLAC, Picture
 from mutagen.oggvorbis import OggVorbis
 from mutagen.id3 import ID3, TIT2, TRCK, TALB, TPE1, TPE2, TDRC, COMM, APIC, TCON, TXXX, PictureType
 
-_CONCURRENT_TRACKS = 4
+_CONCURRENT_TRACKS = 2
 _CONCURRENT_SEGMENTS = 8
 _LOSSLESS_REGEX = r"alac|ape|flac|pcm_(f|s|u).+"
 _EXT_MAP = {
@@ -41,7 +41,6 @@ class SCIncorrectUrlException(Exception):
 
 class SoundCloudDL:
     _session: aiohttp.ClientSession = None
-    _timeout: bool = False
     _aenters: int = 0 # so that multiple 'async with' constructs wont replace session
 
     _client_id  : str = None
@@ -245,14 +244,17 @@ class SoundCloudDL:
         codecs.extend(['mp3', 'opus'] if not self.prefer_opus else ['opus', 'mp3'])
 
         if not 'media' in data:
-            data = await self._get_track(data['id'])
+            while True:
+                try:
+                    data = await self._get_track(data['id'])
+                    break
+                except aiohttp.ContentTypeError:
+                    print(f"track {data['id']} couldn't be resolved, retrying in 10 seconds")
+                    await asyncio.sleep(10)
 
         directory = f"{self.directory}/{subdir}"
         os.makedirs(directory, exist_ok=True)
         if track: zfill_track = f"{track[0]:0>{len(str(track[1]))}}"
-
-        while self._timeout:
-            await asyncio.sleep(15)
         
         if data.get("downloadable") and data.get("has_downloads_left") and self.download_original:
             url = f"https://api-v2.soundcloud.com/tracks/{data['id']}/download"
@@ -282,14 +284,16 @@ class SoundCloudDL:
                 while True:
                     async with self._session.get(owo['url'], params={'client_id': self._client_id}) as r:
                         if r.status == 429:
-                            print(f"TIMEOUT - retrying in a minute")
-                            self._timeout = True
-                            await asyncio.sleep(60)
-                            self._timeout = False
+                            print(f"{data['title']} - TIMEOUT, retrying in half a minute")
+                            await asyncio.sleep(30)
                             continue
-                        else:
+                        elif r.status == 200:
                             url = (await r.json())['url']
                             break
+                        else:
+                            print(f"{data['title']} - STATUS CODE: {r.status}, retrying in 10 seconds")
+                            await asyncio.sleep(10)
+                            continue
             except UnboundLocalError:
                 print(track[0])
                 raise
