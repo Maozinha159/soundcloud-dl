@@ -39,6 +39,9 @@ class SCSessionClosedError(Exception):
 class SCIncorrectUrlException(Exception):
     pass
 
+class SCInvalidToken(Exception):
+    pass
+
 class SoundCloudDL:
     _session: aiohttp.ClientSession = None
     _aenters: int = 0 # so that multiple 'async with' constructs wont replace session
@@ -68,6 +71,21 @@ class SoundCloudDL:
         self._aenters += 1
         if not self._client_id:
             await self._scrape_client_id()
+        if self.oauth_token:
+            async with self._session.get(
+                'https://api-v2.soundcloud.com/payments/quotations/consumer-subscription',
+                params={'client_id': self._client_id}
+            ) as r:
+                if r.status == 401:
+                    raise SCInvalidToken()
+                sub_json = await r.json()
+                if sub_json['active_subscription']['package']['plan'] == 'consumer-high-tier':
+                    print('go+ account (aac)')
+                else:
+                    print('free/go account (no aac)')
+        else:
+            print('no account (no aac)')
+        print(f"client_id = {self._client_id}")
         return self
     
     async def __aexit__(self, *_) -> None:
@@ -78,7 +96,10 @@ class SoundCloudDL:
 
     async def _extract_client_id(self, url: str) -> str:
         async with self._session.get(url) as r:
-            content = await r.text()
+            try:
+                content = await r.text()
+            except:
+                return
         match = re.search(r'"client_id=(.+?)"', content)
         if match: return match.group(1)
 
@@ -124,9 +145,11 @@ class SoundCloudDL:
         return data
     
     async def _clean_url(self, url: str) -> str:
-        if url.startswith('https://soundcloud.app.goo.gl/'):
+        if url.startswith('https://soundcloud.app.goo.gl/') or url.startswith('https://on.soundcloud.com/'):
             async with self._session.get(url, allow_redirects=False) as r:
                 url = r.headers['Location']
+        if url.startswith('https://m.'):
+            url = url.replace('m.', '', 1)
         url = url.partition('?')[0].partition('#')[0].strip('/')
         return url
     
@@ -176,7 +199,7 @@ class SoundCloudDL:
             else:
                 cover_mime = 'image/jpeg'
 
-        match ext:
+        match ext:  
             case "m4a":
                 tags = MP4(path)
                 tags["\xa9nam"] = data["title"]
@@ -416,7 +439,7 @@ class SoundCloudDL:
                 for track in data['collection']:
                     yield track
                 
-                url = data['next_href']
+                url = data['next_href'].replace('://http_backend/', '://api-v2.soundcloud.com/', 1)
 
     async def _download_collection(self, data: dict, type: str = 'user') -> None:
         match type:
@@ -454,7 +477,7 @@ class SoundCloudDL:
             raise SCSessionClosedError("soundcloud session wasn't opened, use 'async with' construct")
         
         url = await self._clean_url(url)
-        print(f"downloading {url}")
+        print(f"\ndownloading {url}")
         resolved = {}
         link_type = self._get_link_type(url)
         match link_type:
