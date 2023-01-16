@@ -62,7 +62,7 @@ class SoundCloudDL:
                 raise FfmpegNotInPathError('ffmpeg and/or ffprobe is not in PATH')
     
     async def __aenter__(self):
-        if not self._aenters:
+        if self._aenters < 1:
             self._session = aiohttp.ClientSession(
                 connector=aiohttp.TCPConnector(force_close=True),
                 timeout=aiohttp.ClientTimeout(total=None),
@@ -257,7 +257,7 @@ class SoundCloudDL:
                         picture_data = picture.write()
                         encoded_data = base64.b64encode(picture_data)
                         vcomment_value = encoded_data.decode("ascii")
-                        tags["metadata_block_picture"] = [vcomment_value]     
+                        tags["metadata_block_picture"] = [vcomment_value]
         if tags:
             tags.save(path)
 
