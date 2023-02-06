@@ -433,7 +433,7 @@ class SoundCloudDL:
         while True:
             async with self._session.get(url, params={'client_id': self._client_id}) as r:
                 data = await r.json()
-                if not data['collection']:
+                if not data['next_href']:
                     return
                 
                 for track in data['collection']:
@@ -444,7 +444,7 @@ class SoundCloudDL:
     async def _download_collection(self, data: dict, type: str = 'user') -> None:
         match type:
             case 'user':
-                url = f"https://api-v2.soundcloud.com/users/{data['id']}/tracks?representation=&limit=100"
+                url = f"https://api-v2.soundcloud.com/users/{data['id']}/tracks?limit=100"
                 subdir = data['username']
             case 'reposts':
                 url = f"https://api-v2.soundcloud.com/stream/users/{data['id']}/reposts?representation=&limit=100"
