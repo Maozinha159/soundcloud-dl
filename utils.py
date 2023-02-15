@@ -24,6 +24,7 @@ def get_tempfile(prefix: str = None, suffix: str = None, random_len: int = 32) -
             return path
 
 def fix_fn(filename: str) -> str:
+    if filename in ['.', '..']: return '-' + filename[1:]
     return re.sub(r"[\\\/\*\<\?\>\|\<\>\:\"]", "-", filename)
 
 def unique_path(path: str, ext: bool = True) -> str:
