@@ -134,15 +134,23 @@ class SoundCloudDL:
             data = await r.json()
         return data
     
-    async def _get_track(self, track_id: int, secret_token = None) -> dict:
-        params = {"client_id": self._client_id} 
-        if secret_token: params.extend({'secret_token': secret_token})
+    async def _get_track(self,
+        track_id: int, secret_token = None,
+        playlist_id: int = None, playlist_token: str = None
+    ) -> dict:
+        params = {"client_id": self._client_id, "ids": track_id} 
+        if secret_token:
+            params.update({'secret_token': secret_token})
+        if playlist_id and playlist_token:
+            params.update({
+                'playlistId': playlist_id, 'playlistSecretToken': playlist_token
+            })
         async with self._session.get(
-            f"https://api-v2.soundcloud.com/tracks/{track_id}",
+            f"https://api-v2.soundcloud.com/tracks",
             params=params
         ) as r:
             data = await r.json()
-        return data
+        return data[0]
     
     async def _clean_url(self, url: str) -> str:
         if url.startswith('https://soundcloud.app.goo.gl/') or url.startswith('https://on.soundcloud.com/'):
@@ -261,19 +269,25 @@ class SoundCloudDL:
         if tags:
             tags.save(path)
 
-    async def _download_track(self, data: dict, subdir: str = '.', album: str = None, album_artist: str = None, track: tuple[int, int] = None) -> bool:
+    async def _download_track(self,
+        data: dict,
+        subdir: str = '.',
+        album: str = None, album_artist: str = None, track: tuple[int, int] = None,
+        playlist_id: int = None, playlist_token: str = None
+    ) -> bool:
         # create array of desired quality and progressively less desired fallbacks
         codecs = ['aac'] if not self.low_quality else []
         codecs.extend(['mp3', 'opus'] if not self.prefer_opus else ['opus', 'mp3'])
-
+        
         if not 'media' in data:
             while True:
                 try:
-                    data = await self._get_track(data['id'])
+                    data = await self._get_track(data['id'], data.get('secret_token'), playlist_id, playlist_token)
                     break
                 except aiohttp.ContentTypeError:
                     print(f"track {data['id']} couldn't be resolved, retrying in 10 seconds")
                     await asyncio.sleep(10)
+        
 
         directory = f"{self.directory}/{subdir}"
         os.makedirs(directory, exist_ok=True)
@@ -420,7 +434,12 @@ class SoundCloudDL:
                     tasks, return_when=asyncio.FIRST_COMPLETED
                 )
             tasks.add(asyncio.create_task(
-                self._download_track(track_data, subdir, album, album_artist, (i, len(data['tracks'])))
+                self._download_track(
+                    track_data,
+                    subdir,
+                    album, album_artist, (i, len(data['tracks'])),
+                    data['id'], data['secret_token']
+                )
             ))
         if data['artwork_url']:
             cover_url = await self._get_cover_url(data)
